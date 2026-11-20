@@ -130,6 +130,11 @@ Requirements: Python 3.11+, `duo_client`, `playwright`, Chromium, `xvfb`,
 systemd, AppArmor, polkit, `ufw`, the password manager's CLI, a Duo account
 (the free tier is enough).
 
+## License
+
+MIT. Rebuild it, change it, take the parts you need. The point of this
+repository is the route, not the implementation.
+
 ## Limits
 
 - No protection against a provider that allows account changes without
