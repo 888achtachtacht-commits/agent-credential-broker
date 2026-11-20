@@ -154,3 +154,28 @@ one tap.
 Whether this holds for every other provider is not claimed. This describes a
 state that was reached, not a finished tool. Issues are welcome; this is not
 maintained as a product.
+
+## What's next
+
+Intentions, not commitments, and no dates.
+
+- **Second factor.** The design already treats the human tap as the second
+  factor; what is missing is the plumbing providers demand. The TOTP secret is
+  already fetched from the vault — generating the code and typing it into the
+  right field is not implemented yet. SMS codes can be relayed from a phone to
+  the broker; that transport works, the integration does not exist yet.
+  Passkeys stay out of scope: they are hardware bound, there is no secret to
+  broker.
+- **Detect changes instead of forbidding them.** During an open session the
+  agent can do whatever the account allows without re-authentication. The
+  prohibitions in `agent/SKILL.md` are instructions, not enforcement. The
+  cheaper control is to compare the account's critical settings before and
+  after a session — forwarding rules, filters, recovery address, app passwords,
+  linked devices — and push a notification on any change. The agent can still
+  do it, but not unnoticed.
+- **A watchdog.** Report when the broker or its browser service is down. A
+  laptop is a good host for it because its battery outlives a power cut. The
+  open problem is that a watchdog cannot report the failure of the machine it
+  runs on; that needs a heartbeat to something outside.
+- **A restricted account** at the provider wherever one exists. That is the
+  only limitation the provider actually enforces.
