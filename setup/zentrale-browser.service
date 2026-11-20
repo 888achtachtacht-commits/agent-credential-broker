@@ -1,0 +1,15 @@
+# Started and stopped only by the broker (see the polkit rule).
+# InaccessiblePaths keeps the browser user from reading the broker's files.
+[Unit]
+Description=Browser for broker sessions
+
+[Service]
+User=browser
+Group=browser
+Environment=HOME=/tmp
+ExecStart=/opt/browser/start.sh
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=/opt/zentrale
+NoNewPrivileges=yes

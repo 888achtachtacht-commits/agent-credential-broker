@@ -1,0 +1,5 @@
+{
+  "URLBlocklist": ["file://*"],
+  "DownloadRestrictions": 3,
+  "PasswordManagerEnabled": false
+}

@@ -1,0 +1,12 @@
+# Never in this repository: the broker's configuration and secrets
+*.env
+*.env.*
+!examples/*.env
+client.token
+zugaenge.json
+!examples/zugaenge.json
+protokoll.log*
+fehler-*.png
+fehler-*.txt
+venv/
+__pycache__/

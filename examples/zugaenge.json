@@ -1,0 +1,27 @@
+{
+  "example-webmail": {
+    "regel": "push",
+    "art": "browser",
+    "gueltig_stunden": 1,
+    "proton_titel": "title of the entry in the password manager",
+    "login_url": "https://www.example.tld/",
+    "login_hosts": [
+      "example.tld"
+    ],
+    "erfolg_url_enthaelt": "/mail"
+  },
+  "example-api": {
+    "regel": "push",
+    "art": "bearer",
+    "proton_titel": "title of the entry in the password manager",
+    "erlaubte_hosts": [
+      "api.example.tld"
+    ],
+    "erlaubte_methoden": [
+      "GET"
+    ],
+    "erlaubte_ports": [
+      443
+    ]
+  }
+}

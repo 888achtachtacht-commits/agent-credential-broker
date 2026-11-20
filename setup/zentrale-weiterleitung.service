@@ -1,0 +1,18 @@
+# User service on the agent host.
+# Install as ~/.config/systemd/user/zentrale-weiterleitung.service, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now zentrale-weiterleitung.service
+#   loginctl enable-linger $USER      # then it runs without a login session
+[Unit]
+Description=Forwarder to the broker's browser relay
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 %h/.local/bin/zentrale-weiterleitung.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+# Install as /etc/apparmor.d/zentrale-chrome, then: sudo apparmor_parser -r <file>
+# Allows Chrome's own sandbox (user namespaces) on systems that block it
+# by default.
+abi <abi/4.0>,
+include <tunables/global>
+profile zentrale-chrome /opt/browser/ms-playwright/chromium-*/chrome-linux*/chrome flags=(unconfined) {
+  userns,
+  include if exists <local/zentrale-chrome>
+}

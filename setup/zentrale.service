@@ -1,0 +1,19 @@
+[Unit]
+Description=Credential broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=zentrale
+Group=zentrale
+ExecStart=/opt/zentrale/venv/bin/python /opt/zentrale/zentrale.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/zentrale
+
+[Install]
+WantedBy=multi-user.target

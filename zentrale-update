@@ -1,0 +1,186 @@
+#!/bin/bash
+# Installiert eine neue Fassung der Zentrale. Aufruf:
+#   zentrale-update              -> nimmt die neueste Datei ~/Downloads/zentrale-v*.py
+#   zentrale-update /pfad/datei  -> nimmt genau diese Datei
+# Prueft die Datei, legt eine Sicherung an, startet neu und holt bei einem
+# Fehlstart die alte Fassung zurueck.
+set -u
+# Vorrang: die Konstante FASSUNG in der Datei. Rueckfall: aeltere Fassungen,
+# die die Nummer direkt in die Startzeile schrieben.
+fassung_aus() { sed -n "s/^FASSUNG[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" "$1" 2>/dev/null | head -1; }
+log_aus()     { sed -n 's/.*gestartet (\(v[0-9.]*\)).*/\1/p' "$1" 2>/dev/null | head -1; }
+hole_fassung() {
+    f=$(fassung_aus "$1")
+    [ -z "$f" ] && f=$(log_aus "$1")
+    printf '%s' "$f"
+}
+# Die installierte Datei gehoert root; ohne Leserecht ueber sudo -n (ohne Passwortfrage) versuchen
+hole_fassung_ziel() {
+    v=$(hole_fassung "$ZIEL")
+    if [ -z "$v" ]; then
+        v=$(sudo -n sed -n "s/^FASSUNG[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" "$ZIEL" 2>/dev/null | head -1)
+        [ -z "$v" ] && v=$(sudo -n sed -n 's/.*gestartet (\(v[0-9.]*\)).*/\1/p' "$ZIEL" 2>/dev/null | head -1)
+    fi
+    printf '%s' "$v"
+}
+ZIEL="${ZENTRALE_ZIEL:-/opt/zentrale/zentrale.py}"
+DIENST="${ZENTRALE_DIENST:-zentrale.service}"
+PROTOKOLL="${ZENTRALE_PROTOKOLL:-/opt/zentrale/protokoll.log}"
+LAGER="${ZENTRALE_LAGER:-$HOME/zentrale-git}"
+BENUTZER="${ZENTRALE_BENUTZER:-zentrale}"       # Eigentuemer der installierten Datei
+
+ohne_rueckfrage=0
+pruefsumme=""
+quelle=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--hilfe|--help)
+        echo "zentrale-update [datei]      installiert die neueste Fassung aus ~/zentrale-neu/ oder ~/Downloads/"
+        echo "zentrale-update --git        holt die neue Fassung aus dem Git-Lager und installiert sie"
+        echo "  -y                         ohne Rueckfrage"
+        echo "  --pruefsumme <sha256>      nur installieren, wenn die Pruefsumme stimmt"
+        exit 0 ;;
+      --git) aus_git=1 ;;
+      -y|--ja) ohne_rueckfrage=1 ;;
+      --pruefsumme) shift; pruefsumme="${1:-}" ;;
+      *) quelle="$1" ;;
+    esac
+    shift
+done
+
+if [ "${aus_git:-0}" = 1 ]; then
+    if [ ! -d "$LAGER/.git" ]; then
+        echo "Kein Git-Lager unter $LAGER. Einmal einrichten (Befehl kommt aus dem Chat)."
+        exit 1
+    fi
+    echo "Hole aus dem Lager ..."
+    if ! git -C "$LAGER" fetch --quiet origin; then
+        echo "ABBRUCH: Konnte nicht holen. Netz oder Schluessel pruefen."
+        exit 1
+    fi
+    zweig=$(git -C "$LAGER" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -z "$zweig" ] || [ "$zweig" = "HEAD" ]; then
+        echo "ABBRUCH: Das Lager steht nicht auf einem Zweig. Einmal neu einrichten."
+        exit 1
+    fi
+    hier=$(git -C "$LAGER" rev-parse HEAD 2>/dev/null)
+    dort=$(git -C "$LAGER" rev-parse "origin/$zweig" 2>/dev/null)
+    if [ -z "$hier" ] || [ -z "$dort" ]; then
+        echo "ABBRUCH: Lager unvollstaendig (Zweig $zweig). Einmal neu einrichten."
+        exit 1
+    fi
+    if [ "$hier" = "$dort" ]; then
+        installiert=$(hole_fassung_ziel)
+        if [ -n "$installiert" ]; then
+            echo "Keine neue Fassung im Lager. Installiert ist $installiert."
+        else
+            echo "Keine neue Fassung im Lager. (Installierte Fassung nicht lesbar - $ZIEL gehoert root.)"
+        fi
+        exit 0
+    fi
+    echo
+    echo "Neue Aenderungen:"
+    git -C "$LAGER" log --no-merges --format='  %h %s' "$hier..$dort"
+    echo
+    git -C "$LAGER" diff --stat "$hier" "$dort" | sed 's/^/  /'
+    echo
+    if [ "$ohne_rueckfrage" != 1 ]; then
+        printf 'Installieren? [j/N] '
+        read -r antwort
+        case "$antwort" in j|J|ja|Ja|y|Y) ;; *) echo "Abgebrochen. Nichts geaendert."; exit 0 ;; esac
+    fi
+    if ! git -C "$LAGER" merge --ff-only "origin/$zweig" >/dev/null; then
+        echo "ABBRUCH: Das Lager laesst sich nicht geradlinig fortschreiben (lokale Aenderungen?)."
+        exit 1
+    fi
+    quelle="$LAGER/zentrale.py"
+    if [ ! -f "$quelle" ]; then
+        echo "ABBRUCH: Im Lager gibt es keine zentrale.py."
+        exit 1
+    fi
+fi
+if [ -z "$quelle" ]; then
+    quelle=$(ls -t "$HOME"/zentrale-neu/zentrale-v*.py "$HOME"/Downloads/zentrale-v*.py 2>/dev/null | head -1)
+fi
+if [ -z "$quelle" ] || [ ! -f "$quelle" ]; then
+    echo "Keine Datei gefunden. Gesucht in ~/zentrale-neu/ und ~/Downloads/ (zentrale-v*.py)"
+    echo "Oder den Pfad angeben: zentrale-update /pfad/zur/datei.py"
+    exit 1
+fi
+
+fassung=$(hole_fassung "$quelle")
+alt=$(hole_fassung_ziel)
+echo "Datei:    $quelle"
+echo "Fassung:  ${fassung:-unbekannt}   (installiert bisher: ${alt:-nicht lesbar})"
+echo "Groesse:  $(stat -c %s "$quelle") Bytes"
+
+if ! python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$quelle" 2>/dev/null; then
+    echo "ABBRUCH: Die Datei ist kein gueltiges Python. Download unvollstaendig?"
+    exit 1
+fi
+if ! grep -q 'def browser_anmelden' "$quelle"; then
+    echo "ABBRUCH: Das sieht nicht nach der Zentrale aus (browser_anmelden fehlt)."
+    exit 1
+fi
+if [ -n "$pruefsumme" ]; then
+    ist=$(sha256sum "$quelle" | cut -d' ' -f1)
+    if [ "$ist" != "$pruefsumme" ]; then
+        echo "ABBRUCH: Pruefsumme stimmt nicht."
+        echo "  erwartet: $pruefsumme"
+        echo "  gefunden: $ist"
+        exit 1
+    fi
+    echo "Pruefsumme: stimmt"
+fi
+echo "Pruefsumme: $(sha256sum "$quelle" | cut -d' ' -f1)"
+echo "Pruefung: in Ordnung"
+
+echo "--- Sicherung und Installation (sudo-Passwort) ---"
+sudo cp -p "$ZIEL" "$ZIEL.vorher" 2>/dev/null || echo "(keine alte Fassung zum Sichern)"
+sudo cp "$quelle" "$ZIEL" || { echo "ABBRUCH: Kopieren fehlgeschlagen."; exit 1; }
+# Eigentuemer und Rechte setzen: die Datei erbt sonst die des Downloads, und bei
+# 600 root koennte der Dienstbenutzer sie nicht lesen.
+sudo chown "$BENUTZER":"$BENUTZER" "$ZIEL" 2>/dev/null || sudo chown "$BENUTZER" "$ZIEL" 2>/dev/null
+sudo chmod 640 "$ZIEL"
+sudo systemctl restart "$DIENST"
+sleep 2
+
+if ! systemctl is-active --quiet "$DIENST"; then
+    echo
+    echo "FEHLSTART. Ich hole die alte Fassung zurueck."
+    sudo cp "$ZIEL.vorher" "$ZIEL" && sudo systemctl restart "$DIENST"
+    sleep 2
+    echo "Dienst jetzt: $(systemctl is-active "$DIENST")"
+    echo "Letzte Zeilen des Dienstes:"
+    sudo journalctl -u "$DIENST" -n 15 --no-pager
+    exit 1
+fi
+
+echo
+echo "Dienst:   $(systemctl is-active "$DIENST")"
+echo "Protokoll:"
+sudo tail -n 2 "$PROTOKOLL"
+echo
+if [ -n "$fassung" ] && sudo tail -n 5 "$PROTOKOLL" | grep -q "gestartet ($fassung)"; then
+    echo "Fertig. $fassung laeuft."
+    ergebnis=0
+else
+    echo "Achtung: Im Protokoll steht nicht die erwartete Fassung ${fassung:-?}. Bitte nachsehen."
+    ergebnis=1
+fi
+
+# Hat sich dieses Skript selbst geaendert? Dann am Ende ersetzen, per Umbenennen,
+# damit der laufende Durchlauf nicht mitten im Lesen seine eigene Datei verliert.
+# Pfad dieses Skripts, nicht fest verdrahtet
+selbst="${ZENTRALE_SELBST:-$(command -v zentrale-update 2>/dev/null || readlink -f "$0")}"
+if [ "${aus_git:-0}" = 1 ] && [ -f "$LAGER/zentrale-update" ] && [ -f "$selbst" ] \
+   && ! cmp -s "$LAGER/zentrale-update" "$selbst"; then
+    if sudo cp "$LAGER/zentrale-update" "$selbst.neu" && sudo chmod 755 "$selbst.neu" \
+       && sudo mv -f "$selbst.neu" "$selbst"; then
+        echo "Hinweis: zentrale-update hat sich selbst auf die Fassung aus dem Lager gebracht."
+    else
+        sudo rm -f "$selbst.neu" 2>/dev/null
+        echo "Hinweis: zentrale-update konnte sich nicht selbst auffrischen."
+    fi
+fi
+exit $ergebnis

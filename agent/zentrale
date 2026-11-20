@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""zentrale - Hilfsprogramm fuer den Agenten. Passwoerter sieht man hiermit nie.
+
+  zentrale status
+  zentrale browser <zugang> "<grund>"        Browser-Sitzung anfordern (Duo-Push, wartet bis ~3 Min.)
+  zentrale ende                              Browser-Sitzung beenden
+  zentrale anfrage <zugang> <METHODE> <url> "<grund>" [--body '<json>' | --body-datei <datei>] [--header 'Name: Wert']
+"""
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+# Adresse und Token liegen in ~/.config/zentrale/ (600). Siehe beispiele/.
+def _lies(name, vorgabe=None):
+    pfad = os.path.expanduser(f'~/.config/zentrale/{name}')
+    if os.path.exists(pfad):
+        return open(pfad).read().strip()
+    if vorgabe is not None:
+        return vorgabe
+    raise SystemExit(f'Fehlt: {pfad}')
+
+
+ZENTRALE = os.environ.get('ZENTRALE_URL') or _lies('adresse')
+TOKEN = _lies('token')
+
+
+def rufe(pfad, daten=None, timeout=240):
+    req = urllib.request.Request(ZENTRALE + pfad, method='POST' if daten is not None else 'GET',
+                                 data=json.dumps(daten).encode() if daten is not None else None,
+                                 headers={'X-Zentrale-Token': TOKEN, 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read())
+        except Exception:
+            return e.code, {'fehler': str(e)}
+    except Exception as e:
+        return 0, {'fehler': f'Zentrale nicht erreichbar: {e}'}
+
+
+def main(a):
+    if not a or a[0] in ('-h', '--help', 'hilfe'):
+        print(__doc__)
+        return 0
+    cmd = a[0]
+    if cmd == 'status':
+        code, d = rufe('/status')
+    elif cmd == 'browser' and len(a) >= 3:
+        print('Warte auf Freigabe (Duo-Push) und Anmeldung der Zentrale ...', file=sys.stderr)
+        code, d = rufe('/browser', {'zugang': a[1], 'grund': ' '.join(a[2:])})
+        if code == 200:
+            d['hinweis'] = 'Jetzt das Browser-Werkzeug mit profile="zentrale" benutzen. Danach: zentrale ende'
+    elif cmd == 'ende':
+        code, d = rufe('/browser/ende', {})
+    elif cmd == 'anfrage' and len(a) >= 5:
+        zugang, methode, url, grund = a[1], a[2].upper(), a[3], a[4]
+        anfrage = {'zugang': zugang, 'methode': methode, 'url': url, 'grund': grund}
+        rest = a[5:]
+        header = {}
+        i = 0
+        while i < len(rest):
+            if rest[i] == '--body' and i + 1 < len(rest):
+                try:
+                    anfrage['body'] = json.loads(rest[i + 1])
+                except ValueError:
+                    anfrage['body'] = rest[i + 1]
+                i += 2
+            elif rest[i] == '--body-datei' and i + 1 < len(rest):
+                inhalt = open(rest[i + 1]).read()
+                try:
+                    anfrage['body'] = json.loads(inhalt)
+                except ValueError:
+                    anfrage['body'] = inhalt
+                i += 2
+            elif rest[i] == '--header' and i + 1 < len(rest) and ':' in rest[i + 1]:
+                k, v = rest[i + 1].split(':', 1)
+                header[k.strip()] = v.strip()
+                i += 2
+            else:
+                print(f'Unbekannte Option: {rest[i]}', file=sys.stderr)
+                return 2
+        if header:
+            anfrage['header'] = header
+        code, d = rufe('/anfrage', anfrage)
+    else:
+        print(__doc__)
+        return 2
+    print(json.dumps(d, ensure_ascii=False, indent=2))
+    return 0 if code == 200 else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

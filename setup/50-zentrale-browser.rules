@@ -1,0 +1,10 @@
+// Install as /etc/polkit-1/rules.d/50-zentrale-browser.rules
+// The broker's user may start and stop exactly one service, nothing else.
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") == "zentrale-browser.service" &&
+      subject.user == "zentrale" &&
+      (action.lookup("verb") == "start" || action.lookup("verb") == "stop")) {
+    return polkit.Result.YES;
+  }
+});
